@@ -5,7 +5,7 @@ require("dotenv").config();
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("Server thuê xe đang chạy");
+  res.send("Server thuê xe đang chạy vbh");
 });
 
 const PORT = process.env.PORT || 4000;
