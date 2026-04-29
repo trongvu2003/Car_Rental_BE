@@ -1,14 +1,14 @@
 const express = require("express");
+const userRoutes = require("./routes/user.route.js");
 const app = express();
-require("dotenv").config();
 
+// app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("Server thuê xe đang chạy vbh");
+  res.send("Car Rental API is running...");
 });
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+app.use("/api/users", userRoutes);
+
+module.exports = app;
