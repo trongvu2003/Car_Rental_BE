@@ -9,14 +9,22 @@ const CarImage = sequelize.define(
       primaryKey: true,
       defaultValue: DataTypes.UUIDV4,
     },
+
     car_id: {
       type: DataTypes.UUID,
       allowNull: false,
     },
+
     image_url: {
       type: DataTypes.STRING,
       allowNull: false,
     },
+
+    public_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     is_main: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,

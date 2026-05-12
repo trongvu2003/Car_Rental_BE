@@ -10,6 +10,7 @@ const createCar = async (req, res) => {
     if (files && files.length > 0) {
       imagesData = files.map((file, index) => ({
         image_url: file.path,
+        public_id: file.filename,
         is_main: index === 0,
       }));
     }
@@ -42,14 +43,72 @@ const createCar = async (req, res) => {
 const getAllCars = async (req, res) => {
   try {
     const cars = await CarService.getAllCarsService();
-    return res.status(200).json({
-      success: true,
-      data: cars,
-    });
+    return res.status(200).json(cars);
   } catch (error) {
     console.error("ERROR:", error);
     return res.status(500).json({
-      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const getCarById = async (req, res) => {
+  try {
+    const carId = req.params.id;
+    const car = await CarService.getCarByIdService(carId);
+    if (!car) {
+      return res.status(404).json({
+        message: "Không tìm thấy xe",
+      });
+    }
+    return res.status(200).json(car);
+  } catch (error) {
+    console.error("ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const updateCar = async (req, res) => {
+  try {
+    const carId = req.params.id;
+
+    const updatedCar = await CarService.updateCarService(
+      carId,
+      req.body,
+      req.files
+    );
+
+    return res.status(200).json(updatedCar);
+  } catch (error) {
+    console.error("ERROR:", error);
+
+    if (error.message === "Car not found") {
+      return res.status(404).json({
+        message: error.message,
+      });
+    }
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+const deleteCar = async (req, res) => {
+  try {
+    const carId = req.params.id;
+    const result = await CarService.deleteCarService(carId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("ERROR:", error);
+    if (error.message === "Car not found") {
+      return res.status(404).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       message: error.message,
     });
   }
@@ -58,4 +117,7 @@ const getAllCars = async (req, res) => {
 module.exports = {
   createCar,
   getAllCars,
+  getCarById,
+  updateCar,
+  deleteCar,
 };
