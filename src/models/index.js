@@ -4,6 +4,7 @@ const User = require("./user.model");
 const Booking = require("./booking.model");
 const CarImage = require("./carImage.model");
 const Review = require("../models/review.model");
+const Favorite = require("../models/favorite.model");
 
 // quan hệ
 Car.hasMany(CarImage, {
@@ -54,6 +55,27 @@ Review.belongsTo(Car, {
   foreignKey: "car_id",
   as: "car",
 });
+
+Favorite.belongsTo(User, {
+  foreignKey: "user_id",
+  as: "user",
+});
+
+Favorite.belongsTo(Car, {
+  foreignKey: "car_id",
+  as: "car",
+});
+
+User.hasMany(Favorite, {
+  foreignKey: "user_id",
+  as: "favorites",
+});
+
+Car.hasMany(Favorite, {
+  foreignKey: "car_id",
+  as: "favorites",
+});
+
 module.exports = {
   sequelize,
   Car,
@@ -61,4 +83,5 @@ module.exports = {
   User,
   Booking,
   Review,
+  Favorite,
 };

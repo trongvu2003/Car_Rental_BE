@@ -4,6 +4,7 @@ const authRoutes = require("./routes/auth.route.js");
 const carsRoutes = require("./routes/car.route.js");
 const bookingRoutes = require("./routes/booking.route.js");
 const reviewRoutes = require("./routes/review.route.js");
+const favoriteRoutes = require("./routes/favorite.routes.js");
 const app = express();
 
 // app.use(cors());
@@ -18,4 +19,5 @@ app.use("/api/auth", authRoutes);
 app.use("/api/cars", carsRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/favorites", favoriteRoutes);
 module.exports = app;
