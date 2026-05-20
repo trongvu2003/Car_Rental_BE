@@ -1,4 +1,6 @@
 const qs = require("qs");
+const axios = require("axios");
+const crypto = require("crypto");
 const { Payment, Booking, sequelize } = require("../models");
 const { sortObject, generateSignature } = require("../utils/vnpay.util");
 
@@ -49,7 +51,13 @@ const createPaymentService = async (booking_id, payment_method, req) => {
         .slice(0, 14);
 
       // Lấy IP client
-      const ipAddr = req.headers["x-forwarded-for"] || req.ip;
+      let ipAddr =
+        req.headers["x-forwarded-for"] || req.socket.remoteAddress || req.ip;
+
+      // Nếu là IPv6 localhost thì chuyển về IPv4
+      if (ipAddr === "::1" || ipAddr === "::ffff:127.0.0.1") {
+        ipAddr = "127.0.0.1";
+      }
 
       let vnp_Params = {
         vnp_Version: "2.1.0",
@@ -68,7 +76,6 @@ const createPaymentService = async (booking_id, payment_method, req) => {
 
       vnp_Params = sortObject(vnp_Params);
 
-      // Tạo chữ ký bảo mật
       const secureHash = generateSignature(
         vnp_Params,
         process.env.VNPAY_HASHSECRET
@@ -79,10 +86,12 @@ const createPaymentService = async (booking_id, payment_method, req) => {
       const paymentUrl =
         process.env.VNPAY_URL +
         "?" +
-        qs.stringify(vnp_Params, {
-          encode: false,
-        });
+        qs.stringify(vnp_Params, { encode: true });
 
+      console.log("paymentUrl:", paymentUrl);
+
+      console.log("paymentUrl:", paymentUrl);
+      vnp_Params;
       await t.commit();
 
       return {
@@ -91,18 +100,56 @@ const createPaymentService = async (booking_id, payment_method, req) => {
     }
 
     // MOMO
-    // if (payment_method === "momo") {
-    //   await t.commit();
+    if (payment_method === "momo") {
+      const orderId = payment.id.toString();
+      const requestId = orderId;
+      const amount = payment.amount.toString();
+      const orderInfo = `Thanh toán booking ${booking.id}`;
+      const requestType = "payWithMethod";
+      const rawSignature =
+        `accessKey=${process.env.MOMO_ACCESS_KEY}` +
+        `&amount=${amount}` +
+        `&extraData=` +
+        `&ipnUrl=${process.env.MOMO_IPN_URL}` +
+        `&orderId=${orderId}` +
+        `&orderInfo=${orderInfo}` +
+        `&partnerCode=${process.env.MOMO_PARTNER_CODE}` +
+        `&redirectUrl=${process.env.MOMO_REDIRECT_URL}` +
+        `&requestId=${requestId}` +
+        `&requestType=${requestType}`;
 
-    //   return {
-    //     message: "MoMo coming soon",
-    //   };
-    // }
+      const signature = crypto
+        .createHmac("sha256", process.env.MOMO_SECRET_KEY)
+        .update(rawSignature)
+        .digest("hex");
+
+      const requestBody = {
+        partnerCode: process.env.MOMO_PARTNER_CODE,
+        partnerName: "Test",
+        storeId: "MomoTestStore",
+        requestId,
+        amount,
+        orderId,
+        orderInfo,
+        redirectUrl: process.env.MOMO_REDIRECT_URL,
+        ipnUrl: process.env.MOMO_IPN_URL,
+        lang: "vi",
+        requestType,
+        autoCapture: true,
+        extraData: "",
+        signature,
+      };
+
+      const response = await axios.post(process.env.MOMO_URL, requestBody);
+      await t.commit();
+      return {
+        payment_url: response.data.payUrl,
+      };
+    }
 
     throw new Error("Invalid payment method");
   } catch (e) {
     await t.rollback();
-
     throw e;
   }
 };
@@ -158,9 +205,23 @@ const handleVnpayReturnService = async (query) => {
           transaction: t,
         }
       );
+
+      await t.commit();
+      return {
+        message: "Payment success",
+      };
     }
 
     // FAILED
+    await payment.update(
+      {
+        payment_status: "failed",
+      },
+      {
+        transaction: t,
+      }
+    );
+
     await Booking.update(
       {
         payment_status: "failed",
@@ -182,8 +243,104 @@ const handleVnpayReturnService = async (query) => {
     throw e;
   }
 };
+// Verify signature MoMo
+const verifyMomoSignature = (body) => {
+  const {
+    accessKey,
+    amount,
+    extraData,
+    message,
+    orderId,
+    orderInfo,
+    orderType,
+    partnerCode,
+    payType,
+    requestId,
+    responseTime,
+    resultCode,
+    transId,
+  } = body;
 
+  const rawSignature =
+    `accessKey=${process.env.MOMO_ACCESS_KEY}` +
+    `&amount=${amount}` +
+    `&extraData=${extraData}` +
+    `&message=${message}` +
+    `&orderId=${orderId}` +
+    `&orderInfo=${orderInfo}` +
+    `&orderType=${orderType}` +
+    `&partnerCode=${partnerCode}` +
+    `&payType=${payType}` +
+    `&requestId=${requestId}` +
+    `&responseTime=${responseTime}` +
+    `&resultCode=${resultCode}` +
+    `&transId=${transId}`;
+
+  const expected = crypto
+    .createHmac("sha256", process.env.MOMO_SECRET_KEY)
+    .update(rawSignature)
+    .digest("hex");
+
+  return expected === body.signature;
+};
+
+// IPN — cập nhật DB
+const handleMomoIPNService = async (body) => {
+  if (!verifyMomoSignature(body)) {
+    throw new Error("Invalid MoMo signature");
+  }
+
+  const { orderId, resultCode, transId } = body;
+  const t = await sequelize.transaction();
+  try {
+    const payment = await Payment.findByPk(orderId, { transaction: t });
+    if (!payment) throw new Error("Payment not found");
+    if (payment.payment_status === "paid") {
+      await t.rollback();
+      return {
+        message: "Already processed",
+      };
+    }
+
+    if (Number(resultCode) === 0) {
+      await payment.update(
+        { payment_status: "paid", transaction_id: transId },
+        { transaction: t }
+      );
+      await Booking.update(
+        { status: "confirmed", payment_status: "paid" },
+        { where: { id: payment.booking_id }, transaction: t }
+      );
+    } else {
+      await payment.update({ payment_status: "failed" }, { transaction: t });
+      await Booking.update(
+        { payment_status: "failed" },
+        { where: { id: payment.booking_id }, transaction: t }
+      );
+    }
+
+    await t.commit();
+    return { message: "IPN processed" };
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+};
+
+// Return — chỉ đọc DB, trả về FE hiển thị
+const handleMomoReturnService = async (query) => {
+  const { orderId } = query;
+  const payment = await Payment.findByPk(orderId);
+  if (!payment) throw new Error("Payment not found");
+  return {
+    payment_status: payment.payment_status,
+    message:
+      payment.payment_status === "paid" ? "Payment success" : "Payment failed",
+  };
+};
 module.exports = {
   createPaymentService,
   handleVnpayReturnService,
+  handleMomoReturnService,
+  handleMomoIPNService,
 };
