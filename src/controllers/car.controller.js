@@ -42,7 +42,7 @@ const createCar = async (req, res) => {
 
 const getAllCars = async (req, res) => {
   try {
-    const cars = await CarService.getAllCarsService();
+    const cars = await CarService.getAllCarsService(req.query);
     return res.status(200).json(cars);
   } catch (error) {
     console.error("ERROR:", error);

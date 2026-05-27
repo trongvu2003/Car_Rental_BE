@@ -61,19 +61,41 @@ const createCarService = async (carData) => {
   }
 };
 
-const getAllCarsService = async () => {
+const getAllCarsService = async (query) => {
   try {
-    const cars = await Car.findAll({
+    const { limit, page, status } = query;
+    const where = {};
+    // filter status
+    if (status) {
+      where.status = status;
+    }
+
+    // pagination
+    const pageNumber = Number(page) || 1;
+    const pageSize = Number(limit) || 10;
+    const offset = (pageNumber - 1) * pageSize;
+    const { rows, count } = await Car.findAndCountAll({
+      where,
       include: [
         {
           model: CarImage,
           as: "images",
         },
       ],
+
+      limit: pageSize,
+      offset,
+
       order: [["createdAt", "DESC"]],
     });
 
-    return cars;
+    return {
+      data: rows,
+      total: count,
+      page: pageNumber,
+      limit: pageSize,
+      totalPages: Math.ceil(count / pageSize),
+    };
   } catch (error) {
     throw error;
   }
