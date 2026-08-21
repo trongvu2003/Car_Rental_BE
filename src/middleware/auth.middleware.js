@@ -1,7 +1,8 @@
 const jwt = require("jsonwebtoken");
 
 const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
+  const token = req.cookies?.token; // đọc từ cookie, cần cookie-parser đã cài ở app.js
+
   if (!token) {
     return res.status(401).json({ message: "Không có token" });
   }

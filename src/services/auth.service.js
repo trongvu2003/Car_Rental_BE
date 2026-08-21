@@ -2,6 +2,13 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user.model");
 
+// Loại bỏ password (hash) trước khi trả về client — tránh lộ hash ra ngoài
+const sanitizeUser = (user) => {
+  const plain = user.toJSON ? user.toJSON() : user;
+  const { password, ...safeUser } = plain;
+  return safeUser;
+};
+
 const register = async (userData) => {
   const { name, email, password } = userData;
   const existingUser = await User.findOne({ where: { email } });
@@ -15,7 +22,8 @@ const register = async (userData) => {
     email,
     password: hashedPassword,
   });
-  return newUser;
+
+  return sanitizeUser(newUser);
 };
 
 const login = async (email, password) => {
@@ -31,12 +39,22 @@ const login = async (email, password) => {
   const token = jwt.sign(
     { id: user.id, email: user.email },
     process.env.JWT_SECRET,
-    { expiresIn: "1d" }
+    { expiresIn: "7d" } // khớp với maxAge của cookie bên controller
   );
-  return { token, user };
+
+  return { token, user: sanitizeUser(user) };
+};
+
+const getById = async (id) => {
+  const user = await User.findByPk(id);
+  if (!user) {
+    throw new Error("Không tìm thấy người dùng");
+  }
+  return sanitizeUser(user);
 };
 
 module.exports = {
   register,
   login,
+  getById,
 };
