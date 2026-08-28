@@ -1,4 +1,4 @@
-const { Booking, User, Car } = require("../models");
+const { Booking, User, Car, CarImage } = require("../models");
 const { Op } = require("sequelize");
 
 const createBookingService = async (bookingData) => {
@@ -129,6 +129,12 @@ const getBookingByIdService = async (bookingId) => {
         {
           model: Car,
           as: "car",
+          include: [
+            {
+              model: CarImage,
+              as: "images",
+            },
+          ],
         },
         {
           model: User,

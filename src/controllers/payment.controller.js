@@ -33,6 +33,15 @@ const vnpayReturn = async (req, res) => {
   }
 };
 
+const vnpayIPN = async (req, res) => {
+  try {
+    const result = await PaymentService.handleVnpayIPNService(req.query);
+    return res.status(200).json(result);
+  } catch (e) {
+    return res.status(200).json({ RspCode: "99", Message: "Unknown error" });
+  }
+};
+
 const momoReturn = async (req, res) => {
   try {
     const result = await PaymentService.handleMomoReturnService(req.query);
@@ -56,4 +65,5 @@ module.exports = {
   vnpayReturn,
   momoReturn,
   momoIPN,
+  vnpayIPN,
 };

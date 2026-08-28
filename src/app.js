@@ -31,5 +31,5 @@ app.use("/api/cars", carsRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/favorites", favoriteRoutes);
-app.use("/payments", paymentRoutes);
+app.use("/api/payments", paymentRoutes);
 module.exports = app;
