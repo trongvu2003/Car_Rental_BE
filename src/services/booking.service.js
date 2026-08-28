@@ -221,6 +221,15 @@ const getMyBookingsService = async (userId) => {
       {
         model: Car,
         as: "car",
+        include: [
+          {
+            model: CarImage,
+            as: "images",
+            separate: true,
+            limit: 1,
+            order: [["id", "ASC"]],
+          },
+        ],
       },
       {
         model: Payment,
