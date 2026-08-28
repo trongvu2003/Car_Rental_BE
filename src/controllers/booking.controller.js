@@ -64,10 +64,30 @@ const deleteBookingController = async (req, res) => {
     });
   }
 };
+
+const getMyBookings = async (req, res) => {
+  try {
+    // req.user.id lấy từ middleware xác thực token (verifyToken)
+    const userId = req.user.id;
+
+    const bookings = await BookingService.getMyBookingsService(userId);
+
+    return res.status(200).json({
+      success: true,
+      data: bookings,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 module.exports = {
   createBookingController,
   getAllBookingsController,
   getBookingByIdController,
   updateBookingStatusController,
   deleteBookingController,
+  getMyBookings,
 };

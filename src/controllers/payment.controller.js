@@ -44,10 +44,15 @@ const vnpayIPN = async (req, res) => {
 
 const momoReturn = async (req, res) => {
   try {
-    const result = await PaymentService.handleMomoReturnService(req.query);
-    return res.status(200).json(result);
+    await PaymentService.handleMomoReturnService(req.query);
+    //. MoMo quy định resultCode === "0" là thanh toán thành công
+    if (req.query.resultCode === "0") {
+      return res.redirect("http://localhost:5173/payment-success");
+    } else {
+      return res.redirect("http://localhost:5173/payment-failed");
+    }
   } catch (error) {
-    return res.status(400).json({ message: error.message });
+    return res.redirect("http://localhost:5173/payment-failed");
   }
 };
 

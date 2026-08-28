@@ -356,5 +356,5 @@ module.exports = {
   handleVnpayReturnService,
   handleMomoReturnService,
   handleMomoIPNService,
-  handleVnpayIPNService
+  handleVnpayIPNService,
 };

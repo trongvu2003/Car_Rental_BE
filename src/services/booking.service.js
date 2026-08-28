@@ -1,4 +1,4 @@
-const { Booking, User, Car, CarImage } = require("../models");
+const { Booking, User, Car, CarImage, Payment } = require("../models");
 const { Op } = require("sequelize");
 
 const createBookingService = async (bookingData) => {
@@ -212,10 +212,32 @@ const deleteBookingService = async (bookingId) => {
   }
 };
 
+const getMyBookingsService = async (userId) => {
+  const bookings = await Booking.findAll({
+    where: {
+      user_id: userId,
+    },
+    include: [
+      {
+        model: Car,
+        as: "car",
+      },
+      {
+        model: Payment,
+        as: "payment",
+      },
+    ],
+    order: [["createdAt", "DESC"]],
+  });
+
+  return bookings;
+};
+
 module.exports = {
   createBookingService,
   getAllBookingsService,
   getBookingByIdService,
   updateBookingStatusService,
   deleteBookingService,
+  getMyBookingsService,
 };
