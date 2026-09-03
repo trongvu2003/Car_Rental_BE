@@ -2,8 +2,16 @@ const userService = require("../services/user.service");
 
 const createUser = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    const newUser = await userService.createUser({ name, email, password });
+    // Thêm role vào đây
+    const { name, email, password, role } = req.body;
+
+    const newUser = await userService.createUser({
+      name,
+      email,
+      password,
+      role, // Truyền thêm role xuống service
+    });
+
     res.status(201).json(newUser);
   } catch (e) {
     console.error(e);
@@ -42,12 +50,17 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, password } = req.body;
+
+    // Thêm role vào đây
+    const { name, email, password, role } = req.body;
+
     const updatedUser = await userService.updateUser(id, {
       name,
       email,
       password,
+      role, // Cập nhật thêm role
     });
+
     res.status(200).json(updatedUser);
   } catch (e) {
     console.error(e);

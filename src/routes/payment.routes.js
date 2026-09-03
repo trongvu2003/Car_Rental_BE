@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const paymentController = require("../controllers/payment.controller");
+const authMiddleware = require("../middleware/auth.middleware");
 
-router.post("/", paymentController.createPayment);
+router.post("/", authMiddleware, paymentController.createPayment);
 router.get("/vnpay-return", paymentController.vnpayReturn);
 router.get("/vnpay-ipn", paymentController.vnpayIPN);
 router.get("/momo-return", paymentController.momoReturn);

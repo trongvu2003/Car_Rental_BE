@@ -44,6 +44,11 @@ const User = sequelize.define(
         },
       },
     },
+    role: {
+      type: DataTypes.ENUM("user", "admin"),
+      allowNull: false,
+      defaultValue: "user",
+    },
   }
   //   {
   //     tableName: "users", // Tên bảng trong Database
