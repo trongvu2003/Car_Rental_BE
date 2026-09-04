@@ -199,6 +199,10 @@ const deleteBookingService = async (bookingId) => {
     if (!booking) {
       throw new Error("Booking not found");
     }
+    await Payment.destroy({
+      where: { booking_id: bookingId },
+      transaction: t,
+    });
     await booking.destroy({
       transaction: t,
     });
