@@ -50,20 +50,19 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Thêm role vào đây
     const { name, email, password, role } = req.body;
 
-    const updatedUser = await userService.updateUser(id, {
-      name,
-      email,
-      password,
-      role, // Cập nhật thêm role
-    });
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (password) updateData.password = password;
+    if (role) updateData.role = role;
+    const updatedUser = await userService.updateUser(id, updateData);
 
     res.status(200).json(updatedUser);
   } catch (e) {
-    console.error(e);
+    console.error("LỖI UPDATE USER:", e);
+
     if (e.name === "SequelizeValidationError") {
       const errors = e.errors.map((err) => ({
         field: err.path,

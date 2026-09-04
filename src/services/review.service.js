@@ -42,7 +42,22 @@ const createReviewService = async (reviewData) => {
     throw error(e);
   }
 };
-
+const getAllReviewsService = async () => {
+  return await Review.findAll({
+    include: [
+      {
+        model: User,
+        as: "user",
+        attributes: ["id", "name", "email"],
+      },
+      {
+        model: Car,
+        as: "car",
+      },
+    ],
+    order: [["createdAt", "DESC"]],
+  });
+};
 const getReviewsByCarService = async (carId) => {
   try {
     return await Review.findAll({
@@ -118,6 +133,7 @@ const deleteReviewService = async (id) => {
 
 module.exports = {
   createReviewService,
+  getAllReviewsService,
   getReviewsByCarService,
   updateReviewService,
   deleteReviewService,

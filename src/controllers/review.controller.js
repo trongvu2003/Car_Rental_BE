@@ -13,6 +13,19 @@ const createReviewController = async (req, res) => {
   }
 };
 
+const getAllReviews = async (req, res) => {
+  try {
+    const reviews = await ReviewService.getAllReviewsService();
+
+    return res.status(200).json(reviews);
+  } catch (error) {
+    console.error("ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
 const getReviewsByCar = async (req, res) => {
   try {
     const review = await ReviewService.getReviewsByCarService(req.params.carId);
@@ -59,6 +72,7 @@ const deleteReview = async (req, res) => {
 
 module.exports = {
   createReviewController,
+  getAllReviews,
   getReviewsByCar,
   updateReview,
   deleteReview,
