@@ -3,7 +3,8 @@ const authService = require("../services/auth.service");
 const COOKIE_OPTIONS = {
   httpOnly: true, // JS phía frontend không đọc được — chống XSS đánh cắp token
   secure: process.env.NODE_ENV === "production", // bắt buộc HTTPS ở production
-  sameSite: "lax", // dùng "none" nếu FE/BE khác domain hẳn (kèm secure: true bắt buộc)
+  // sameSite: "lax", // dùng "none" nếu FE/BE khác domain hẳn (kèm secure: true bắt buộc)
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày, khớp expiresIn của jwt.sign
 };
 
