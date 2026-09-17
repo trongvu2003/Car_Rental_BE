@@ -1,5 +1,7 @@
-const { Car, CarImage, sequelize } = require("../models");
+const { sequelize } = require("../models");
 const cloudinary = require("../config/cloudinary");
+
+const carRepository = require("../repositories/car.repository");
 
 const createCarService = async (carData) => {
   const {
@@ -18,7 +20,7 @@ const createCarService = async (carData) => {
   const t = await sequelize.transaction();
 
   try {
-    const newCar = await Car.create(
+    const newCar = await carRepository.create(
       {
         name,
         brand,
@@ -41,15 +43,13 @@ const createCarService = async (carData) => {
         is_main: img.is_main,
       }));
 
-      await CarImage.bulkCreate(imageData, { transaction: t });
+      await carRepository.createImages(imageData, {
+        transaction: t,
+      });
     }
 
     // lấy lại kèm ảnh
-    const result = await Car.findByPk(newCar.id, {
-      include: {
-        model: CarImage,
-        as: "images",
-      },
+    const result = await carRepository.findById(newCar.id, {
       transaction: t,
     });
 
@@ -65,6 +65,7 @@ const getAllCarsService = async (query) => {
   try {
     const { limit, page, status } = query;
     const where = {};
+
     // filter status
     if (status) {
       where.status = status;
@@ -74,19 +75,11 @@ const getAllCarsService = async (query) => {
     const pageNumber = Number(page) || 1;
     const pageSize = Number(limit) || 10;
     const offset = (pageNumber - 1) * pageSize;
-    const { rows, count } = await Car.findAndCountAll({
-      where,
-      include: [
-        {
-          model: CarImage,
-          as: "images",
-        },
-      ],
 
+    const { rows, count } = await carRepository.findAndCountAll({
+      where,
       limit: pageSize,
       offset,
-
-      order: [["createdAt", "DESC"]],
     });
 
     return {
@@ -103,14 +96,8 @@ const getAllCarsService = async (query) => {
 
 const getCarByIdService = async (carId) => {
   try {
-    const car = await Car.findByPk(carId, {
-      include: [
-        {
-          model: CarImage,
-          as: "images",
-        },
-      ],
-    });
+    const car = await carRepository.findById(carId);
+
     return car;
   } catch (error) {
     throw error;
@@ -119,21 +106,17 @@ const getCarByIdService = async (carId) => {
 
 const updateCarService = async (id, updateData, files) => {
   const t = await sequelize.transaction();
+
   try {
-    const car = await Car.findByPk(id, {
-      include: [
-        {
-          model: CarImage,
-          as: "images",
-        },
-      ],
+    const car = await carRepository.findById(id, {
       transaction: t,
     });
 
     if (!car) {
       throw new Error("Car not found");
     }
-    await car.update(updateData, {
+
+    await carRepository.update(car, updateData, {
       transaction: t,
     });
 
@@ -142,24 +125,25 @@ const updateCarService = async (id, updateData, files) => {
       for (const image of car.images) {
         console.log("IMAGE DB:", image.toJSON());
         console.log("PUBLIC ID:", image.public_id);
+
         if (image.public_id) {
           const result = await cloudinary.uploader.destroy(image.public_id);
+
           console.log("CLOUDINARY DELETE RESULT:", result);
         } else {
           console.log("NO PUBLIC ID FOUND");
         }
       }
+
       // xóa ảnh cũ DB
-      await CarImage.destroy({
-        where: {
-          car_id: id,
-        },
+      await carRepository.deleteImagesByCarId(id, {
         transaction: t,
       });
 
       // tạo ảnh mới
       const imageData = files.map((file, index) => {
         console.log("NEW FILE:", file);
+
         return {
           car_id: id,
           image_url: file.path,
@@ -169,19 +153,13 @@ const updateCarService = async (id, updateData, files) => {
       });
 
       // lưu DB
-      await CarImage.bulkCreate(imageData, {
+      await carRepository.createImages(imageData, {
         transaction: t,
       });
     }
 
     // lấy dữ liệu mới nhất
-    const updatedCar = await Car.findByPk(id, {
-      include: [
-        {
-          model: CarImage,
-          as: "images",
-        },
-      ],
+    const updatedCar = await carRepository.findById(id, {
       transaction: t,
     });
 
@@ -196,14 +174,9 @@ const updateCarService = async (id, updateData, files) => {
 
 const deleteCarService = async (id) => {
   const t = await sequelize.transaction();
+
   try {
-    const car = await Car.findByPk(id, {
-      include: [
-        {
-          model: CarImage,
-          as: "images",
-        },
-      ],
+    const car = await carRepository.findById(id, {
       transaction: t,
     });
 
@@ -221,22 +194,17 @@ const deleteCarService = async (id) => {
     }
 
     // xóa ảnh DB
-    await CarImage.destroy({
-      where: {
-        car_id: id,
-      },
+    await carRepository.deleteImagesByCarId(id, {
       transaction: t,
     });
 
     // xóa xe
-    await Car.destroy({
-      where: {
-        id,
-      },
+    await carRepository.deleteById(id, {
       transaction: t,
     });
 
     await t.commit();
+
     return {
       message: "Car deleted successfully",
     };

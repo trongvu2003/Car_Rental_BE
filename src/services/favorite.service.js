@@ -1,22 +1,26 @@
-const { Favorite, Car, sequelize } = require("../models");
+const { sequelize } = require("../models");
+
+const favoriteRepository = require("../repositories/favorite.repository");
 
 const addFavoriteService = async (user_id, car_id) => {
   const t = await sequelize.transaction();
 
   try {
-    const existing = await Favorite.findOne({
-      where: {
+    const existing = await favoriteRepository.findOne(
+      {
         user_id,
         car_id,
       },
-      transaction: t,
-    });
+      {
+        transaction: t,
+      }
+    );
 
     if (existing) {
       throw new Error("Car already in favorites");
     }
 
-    const favorite = await Favorite.create(
+    const favorite = await favoriteRepository.create(
       {
         user_id,
         car_id,
@@ -37,18 +41,7 @@ const addFavoriteService = async (user_id, car_id) => {
 
 const getFavoritesService = async (user_id) => {
   try {
-    return await Favorite.findAll({
-      where: {
-        user_id,
-      },
-      include: [
-        {
-          model: Car,
-          as: "car",
-        },
-      ],
-      order: [["createdAt", "DESC"]],
-    });
+    return await favoriteRepository.findAll(user_id);
   } catch (e) {
     throw e;
   }
@@ -58,19 +51,21 @@ const removeFavoriteService = async (user_id, car_id) => {
   const t = await sequelize.transaction();
 
   try {
-    const favorite = await Favorite.findOne({
-      where: {
+    const favorite = await favoriteRepository.findOne(
+      {
         user_id,
         car_id,
       },
-      transaction: t,
-    });
+      {
+        transaction: t,
+      }
+    );
 
     if (!favorite) {
       throw new Error("Favorite not found");
     }
 
-    await favorite.destroy({
+    await favoriteRepository.destroy(favorite, {
       transaction: t,
     });
 

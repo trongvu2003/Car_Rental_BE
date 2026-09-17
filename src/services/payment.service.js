@@ -1,7 +1,10 @@
 const qs = require("qs");
 const axios = require("axios");
 const crypto = require("crypto");
-const { Payment, Booking, sequelize } = require("../models");
+const { sequelize } = require("../models");
+
+const paymentRepository = require("../repositories/payment.repository");
+
 const {
   sortObject,
   generateSignature,
@@ -12,7 +15,7 @@ const createPaymentService = async (booking_id, payment_method, req) => {
   const t = await sequelize.transaction();
 
   try {
-    const booking = await Booking.findByPk(booking_id, {
+    const booking = await paymentRepository.findBookingById(booking_id, {
       transaction: t,
     });
 
@@ -20,7 +23,7 @@ const createPaymentService = async (booking_id, payment_method, req) => {
       throw new Error("Booking not found");
     }
 
-    const payment = await Payment.create(
+    const payment = await paymentRepository.create(
       {
         booking_id,
         amount: booking.total_price,
@@ -34,7 +37,8 @@ const createPaymentService = async (booking_id, payment_method, req) => {
 
     // CASH
     if (payment_method === "cash") {
-      await booking.update(
+      await paymentRepository.updateBooking(
+        booking.id,
         {
           status: "confirmed",
           payment_status: "paid",
@@ -43,12 +47,16 @@ const createPaymentService = async (booking_id, payment_method, req) => {
           transaction: t,
         }
       );
+
       await t.commit();
+
       return payment;
     }
+
     // VNPAY
     if (payment_method === "vnpay") {
       const date = new Date();
+
       const createDate = date
         .toISOString()
         .replace(/[-:TZ.]/g, "")
@@ -66,7 +74,7 @@ const createPaymentService = async (booking_id, payment_method, req) => {
       let vnp_Params = {
         vnp_Version: "2.1.0",
         vnp_Command: "pay",
-        vnp_TmnCode: process.env.VNPAY_TMNCODE, //Mã merchant
+        vnp_TmnCode: process.env.VNPAY_TMNCODE,
         vnp_Locale: "vn",
         vnp_CurrCode: "VND",
         vnp_TxnRef: payment.id,
@@ -94,8 +102,8 @@ const createPaymentService = async (booking_id, payment_method, req) => {
 
       console.log("paymentUrl:", paymentUrl);
 
-      console.log("paymentUrl:", paymentUrl);
       vnp_Params;
+
       await t.commit();
 
       return {
@@ -110,6 +118,7 @@ const createPaymentService = async (booking_id, payment_method, req) => {
       const amount = payment.amount.toString();
       const orderInfo = `Thanh toán booking ${booking.id}`;
       const requestType = "payWithMethod";
+
       const rawSignature =
         `accessKey=${process.env.MOMO_ACCESS_KEY}` +
         `&amount=${amount}` +
@@ -145,7 +154,9 @@ const createPaymentService = async (booking_id, payment_method, req) => {
       };
 
       const response = await axios.post(process.env.MOMO_URL, requestBody);
+
       await t.commit();
+
       return {
         payment_url: response.data.payUrl,
       };
@@ -158,8 +169,7 @@ const createPaymentService = async (booking_id, payment_method, req) => {
   }
 };
 
-// HANDLE VNPAY RETURN — chỉ dùng để hiển thị cho user, KHÔNG update DB tiền thật
-// (việc chốt trạng thái nên dựa vào IPN, xem hàm handleVnpayIPNService bên dưới)
+// HANDLE VNPAY RETURN
 const handleVnpayReturnService = async (query) => {
   const isValid = verifySignature(query, process.env.VNPAY_HASHSECRET);
 
@@ -170,7 +180,8 @@ const handleVnpayReturnService = async (query) => {
     };
   }
 
-  const payment = await Payment.findByPk(query.vnp_TxnRef);
+  const payment = await paymentRepository.findById(query.vnp_TxnRef);
+
   if (!payment) {
     return {
       success: false,
@@ -186,71 +197,118 @@ const handleVnpayReturnService = async (query) => {
   };
 };
 
-// HANDLE VNPAY IPN — server-to-server, đây mới là nơi update DB thật sự
+// HANDLE VNPAY IPN
 const handleVnpayIPNService = async (query) => {
   const isValid = verifySignature(query, process.env.VNPAY_HASHSECRET);
 
   if (!isValid) {
-    return { RspCode: "97", Message: "Invalid signature" };
+    return {
+      RspCode: "97",
+      Message: "Invalid signature",
+    };
   }
 
   const t = await sequelize.transaction();
+
   try {
     const paymentId = query.vnp_TxnRef;
 
-    // Lock dòng để tránh race condition khi return/IPN gọi gần như đồng thời
-    const payment = await Payment.findByPk(paymentId, {
-      include: [{ model: Booking, as: "booking" }],
+    // Lock dòng để tránh race condition
+    const payment = await paymentRepository.findByIdWithBooking(paymentId, {
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
 
     if (!payment) {
       await t.rollback();
-      return { RspCode: "01", Message: "Order not found" };
+
+      return {
+        RspCode: "01",
+        Message: "Order not found",
+      };
     }
 
-    // Kiểm tra số tiền khớp với DB (defense in depth)
+    // Kiểm tra số tiền
     const expectedAmount = Math.round(payment.amount * 100);
+
     if (Number(query.vnp_Amount) !== expectedAmount) {
       await t.rollback();
-      return { RspCode: "04", Message: "Invalid amount" };
+
+      return {
+        RspCode: "04",
+        Message: "Invalid amount",
+      };
     }
 
     if (payment.payment_status === "paid") {
       await t.rollback();
-      return { RspCode: "02", Message: "Order already confirmed" };
+
+      return {
+        RspCode: "02",
+        Message: "Order already confirmed",
+      };
     }
 
     if (query.vnp_ResponseCode === "00") {
-      await payment.update(
+      await paymentRepository.update(
+        payment,
         {
           payment_status: "paid",
           transaction_id: query.vnp_TransactionNo,
         },
-        { transaction: t }
+        {
+          transaction: t,
+        }
       );
 
-      await Booking.update(
-        { status: "confirmed", payment_status: "paid" },
-        { where: { id: payment.booking_id }, transaction: t }
+      await paymentRepository.updateBooking(
+        payment.booking_id,
+        {
+          status: "confirmed",
+          payment_status: "paid",
+        },
+        {
+          transaction: t,
+        }
       );
     } else {
-      await payment.update({ payment_status: "failed" }, { transaction: t });
+      await paymentRepository.update(
+        payment,
+        {
+          payment_status: "failed",
+        },
+        {
+          transaction: t,
+        }
+      );
 
-      await Booking.update(
-        { payment_status: "failed" },
-        { where: { id: payment.booking_id }, transaction: t }
+      await paymentRepository.updateBooking(
+        payment.booking_id,
+        {
+          payment_status: "failed",
+        },
+        {
+          transaction: t,
+        }
       );
     }
 
     await t.commit();
-    return { RspCode: "00", Message: "Confirm Success" };
+
+    return {
+      RspCode: "00",
+      Message: "Confirm Success",
+    };
   } catch (e) {
     await t.rollback();
-    return { RspCode: "99", Message: "Unknown error" };
+
+    return {
+      RspCode: "99",
+      Message: "Unknown error",
+    };
   }
 };
+
 // Verify signature MoMo
 const verifyMomoSignature = (body) => {
   const {
@@ -299,41 +357,82 @@ const handleMomoIPNService = async (body) => {
   }
 
   const { orderId, resultCode, transId } = body;
+
   const t = await sequelize.transaction();
+
   try {
-    const payment = await Payment.findByPk(orderId, { transaction: t });
-    if (!payment) throw new Error("Payment not found");
+    const payment = await paymentRepository.findById(orderId, {
+      transaction: t,
+    });
+
+    if (!payment) {
+      throw new Error("Payment not found");
+    }
+
     // thêm kiểm tra amount
     if (Number(body.amount) !== Number(payment.amount)) {
       await t.rollback();
+
       throw new Error("Invalid amount");
     }
+
     if (payment.payment_status === "paid") {
       await t.rollback();
+
       return {
         message: "Already processed",
       };
     }
 
     if (Number(resultCode) === 0) {
-      await payment.update(
-        { payment_status: "paid", transaction_id: transId },
-        { transaction: t }
+      await paymentRepository.update(
+        payment,
+        {
+          payment_status: "paid",
+          transaction_id: transId,
+        },
+        {
+          transaction: t,
+        }
       );
-      await Booking.update(
-        { status: "confirmed", payment_status: "paid" },
-        { where: { id: payment.booking_id }, transaction: t }
+
+      await paymentRepository.updateBooking(
+        payment.booking_id,
+        {
+          status: "confirmed",
+          payment_status: "paid",
+        },
+        {
+          transaction: t,
+        }
       );
     } else {
-      await payment.update({ payment_status: "failed" }, { transaction: t });
-      await Booking.update(
-        { payment_status: "failed" },
-        { where: { id: payment.booking_id }, transaction: t }
+      await paymentRepository.update(
+        payment,
+        {
+          payment_status: "failed",
+        },
+        {
+          transaction: t,
+        }
+      );
+
+      await paymentRepository.updateBooking(
+        payment.booking_id,
+        {
+          payment_status: "failed",
+        },
+        {
+          transaction: t,
+        }
       );
     }
 
     await t.commit();
-    return { message: "IPN processed" };
+
+    return {
+      message: "IPN processed",
+    };
   } catch (e) {
     await t.rollback();
     throw e;
@@ -343,14 +442,20 @@ const handleMomoIPNService = async (body) => {
 // Return — chỉ đọc DB, trả về FE hiển thị
 const handleMomoReturnService = async (query) => {
   const { orderId } = query;
-  const payment = await Payment.findByPk(orderId);
-  if (!payment) throw new Error("Payment not found");
+
+  const payment = await paymentRepository.findById(orderId);
+
+  if (!payment) {
+    throw new Error("Payment not found");
+  }
+
   return {
     payment_status: payment.payment_status,
     message:
       payment.payment_status === "paid" ? "Payment success" : "Payment failed",
   };
 };
+
 module.exports = {
   createPaymentService,
   handleVnpayReturnService,

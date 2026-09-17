@@ -1,15 +1,22 @@
-const { User, Car, Review, sequelize } = require("../models");
+const { sequelize } = require("../models");
+
+const reviewRepository = require("../repositories/review.repository");
 
 const createReviewService = async (reviewData) => {
   const t = await sequelize.transaction();
+
   try {
     const { user_id, car_id, rating, comment } = reviewData;
-    const car = await Car.findByPk(car_id, { transaction: t });
+
+    const car = await reviewRepository.findCarById(car_id, {
+      transaction: t,
+    });
+
     if (!car) {
       throw new Error("car not found");
     }
 
-    const review = await Review.create(
+    const review = await reviewRepository.create(
       {
         user_id,
         car_id,
@@ -21,58 +28,24 @@ const createReviewService = async (reviewData) => {
       }
     );
 
-    const result = await Review.findByPk(review.id, {
-      include: [
-        {
-          model: User,
-          as: "user",
-          attributes: ["id", "name", "email"],
-        },
-        {
-          model: Car,
-          as: "car",
-        },
-      ],
-    });
+    const result = await reviewRepository.findByIdWithDetails(review.id);
 
     await t.commit();
+
     return result;
   } catch (e) {
     await t.rollback();
-    throw error(e);
+    throw e;
   }
 };
+
 const getAllReviewsService = async () => {
-  return await Review.findAll({
-    include: [
-      {
-        model: User,
-        as: "user",
-        attributes: ["id", "name", "email"],
-      },
-      {
-        model: Car,
-        as: "car",
-      },
-    ],
-    order: [["createdAt", "DESC"]],
-  });
+  return await reviewRepository.findAll();
 };
+
 const getReviewsByCarService = async (carId) => {
   try {
-    return await Review.findAll({
-      where: {
-        car_id: carId,
-      },
-      include: [
-        {
-          model: User,
-          as: "user",
-          attributes: ["id", "name", "email"],
-        },
-      ],
-      order: [["createdAt", "DESC"]],
-    });
+    return await reviewRepository.findAllByCarId(carId);
   } catch (e) {
     throw e;
   }
@@ -82,7 +55,7 @@ const updateReviewService = async (id, updateData) => {
   const t = await sequelize.transaction();
 
   try {
-    const review = await Review.findByPk(id, {
+    const review = await reviewRepository.findById(id, {
       transaction: t,
     });
 
@@ -90,7 +63,7 @@ const updateReviewService = async (id, updateData) => {
       throw new Error("Review not found");
     }
 
-    await review.update(updateData, {
+    await reviewRepository.update(review, updateData, {
       transaction: t,
     });
 
@@ -108,7 +81,7 @@ const deleteReviewService = async (id) => {
   const t = await sequelize.transaction();
 
   try {
-    const review = await Review.findByPk(id, {
+    const review = await reviewRepository.findById(id, {
       transaction: t,
     });
 
@@ -116,7 +89,7 @@ const deleteReviewService = async (id) => {
       throw new Error("Review not found");
     }
 
-    await review.destroy({
+    await reviewRepository.destroy(review, {
       transaction: t,
     });
 

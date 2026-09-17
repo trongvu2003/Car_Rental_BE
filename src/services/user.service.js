@@ -1,36 +1,33 @@
-const User = require("../models/user.model");
+const userRepository = require("../repositories/user.repository");
 
 const createUser = async (userData) => {
-  const newUser = await User.create(userData);
+  const newUser = await userRepository.create(userData);
+
   return newUser;
 };
 
 const getAllUsers = async () => {
-  const users = await User.findAll();
+  const users = await userRepository.getAllUsers();
+
   return users;
 };
 
 const getUserById = async (id) => {
-  const user = await User.findByPk(id);
+  const user = await userRepository.getUserById(id);
+
   return user;
 };
 
 const updateUser = async (id, userData) => {
-  const user = await User.findByPk(id);
-  if (!user) {
-    throw new Error("User not found");
-  }
-  await user.update(userData);
+  const user = await userRepository.updateUser(id, userData);
+
   return user;
 };
 
 const deleteUser = async (id) => {
-  const user = await User.findByPk(id);
-  if (!user) {
-    throw new Error("User not found");
-  }
-  await user.destroy();
-  return { message: "User deleted successfully" };
+  const result = await userRepository.deleteUser(id);
+
+  return result;
 };
 
 module.exports = {

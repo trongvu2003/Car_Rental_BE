@@ -1,6 +1,6 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const User = require("../models/user.model");
+const userRepository = require("../repositories/user.repository");
 
 const sanitizeUser = (user) => {
   const plain = user.toJSON ? user.toJSON() : user;
@@ -11,7 +11,7 @@ const sanitizeUser = (user) => {
 const register = async (userData) => {
   const { name, email, password, role } = userData;
 
-  const existingUser = await User.findOne({ where: { email } });
+  const existingUser = await userRepository.findByEmail(email);
   if (existingUser) {
     throw new Error("Email đã tồn tại");
   }
@@ -22,18 +22,18 @@ const register = async (userData) => {
   // Việc tạo "admin" nên được thực hiện ở API riêng hoặc sửa trực tiếp DB ban đầu.
   const assignedRole = role === "admin" ? "user" : role || "user";
 
-  const newUser = await User.create({
+  const newUser = await userRepository.create({
     name,
     email,
     password: hashedPassword,
-    role: assignedRole, // Lưu role vào DB
+    role: assignedRole,
   });
 
   return sanitizeUser(newUser);
 };
 
 const login = async (email, password) => {
-  const user = await User.findOne({ where: { email } });
+  const user = await userRepository.findByEmail(email);
   if (!user) {
     throw new Error("Email không tồn tại");
   }
@@ -47,7 +47,7 @@ const login = async (email, password) => {
     {
       id: user.id,
       email: user.email,
-      role: user.role, // Giúp middleware đọc được quyền mà không cần gọi DB
+      role: user.role,
     },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
@@ -57,7 +57,7 @@ const login = async (email, password) => {
 };
 
 const getById = async (id) => {
-  const user = await User.findByPk(id);
+  const user = await userRepository.findById(id);
   if (!user) {
     throw new Error("Không tìm thấy người dùng");
   }

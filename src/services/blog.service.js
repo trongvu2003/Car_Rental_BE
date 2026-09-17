@@ -1,6 +1,8 @@
-const { Blog, BlogImage, sequelize } = require("../models");
+const { sequelize } = require("../models");
 const cloudinary = require("../config/cloudinary");
 const { Op } = require("sequelize");
+
+const blogRepository = require("../repositories/blog.repository");
 
 const createBlogService = async (blogData) => {
   const { title, excerpt, content, isPublished, publishedAt, images } =
@@ -9,7 +11,7 @@ const createBlogService = async (blogData) => {
   const t = await sequelize.transaction();
 
   try {
-    const newBlog = await Blog.create(
+    const newBlog = await blogRepository.create(
       {
         title,
         excerpt,
@@ -28,14 +30,12 @@ const createBlogService = async (blogData) => {
         is_main: index === 0,
       }));
 
-      await BlogImage.bulkCreate(imageData, { transaction: t });
+      await blogRepository.createImages(imageData, {
+        transaction: t,
+      });
     }
 
-    const result = await Blog.findByPk(newBlog.id, {
-      include: {
-        model: BlogImage,
-        as: "images",
-      },
+    const result = await blogRepository.findById(newBlog.id, {
       transaction: t,
     });
 
@@ -67,17 +67,10 @@ const getAllBlogsService = async (query) => {
     const pageSize = Number(limit) || 10;
     const offset = (pageNumber - 1) * pageSize;
 
-    const { rows, count } = await Blog.findAndCountAll({
+    const { rows, count } = await blogRepository.findAndCountAll({
       where,
-      include: [
-        {
-          model: BlogImage,
-          as: "images",
-        },
-      ],
       limit: pageSize,
       offset,
-      order: [["createdAt", "DESC"]],
     });
 
     return {
@@ -94,17 +87,10 @@ const getAllBlogsService = async (query) => {
 
 const getBlogByIdService = async (id, options = {}) => {
   try {
-    const blog = await Blog.findByPk(id, {
-      include: [
-        {
-          model: BlogImage,
-          as: "images",
-        },
-      ],
-    });
+    const blog = await blogRepository.findById(id);
 
     if (blog && options.increaseView) {
-      await blog.increment("viewCount");
+      await blogRepository.incrementView(blog);
     }
 
     return blog;
@@ -115,14 +101,9 @@ const getBlogByIdService = async (id, options = {}) => {
 
 const updateBlogService = async (id, updateData, files) => {
   const t = await sequelize.transaction();
+
   try {
-    const blog = await Blog.findByPk(id, {
-      include: [
-        {
-          model: BlogImage,
-          as: "images",
-        },
-      ],
+    const blog = await blogRepository.findById(id, {
       transaction: t,
     });
 
@@ -130,20 +111,22 @@ const updateBlogService = async (id, updateData, files) => {
       throw new Error("Blog not found");
     }
 
-    await blog.update(updateData, { transaction: t });
+    await blogRepository.updateById(blog, updateData, {
+      transaction: t,
+    });
 
     if (files && files.length > 0) {
       for (const image of blog.images) {
         if (image.public_id) {
           const result = await cloudinary.uploader.destroy(image.public_id);
+
           console.log("CLOUDINARY DELETE RESULT:", result);
         } else {
           console.log("NO PUBLIC ID FOUND");
         }
       }
 
-      await BlogImage.destroy({
-        where: { blog_id: id },
+      await blogRepository.deleteImagesByBlogId(id, {
         transaction: t,
       });
 
@@ -154,16 +137,12 @@ const updateBlogService = async (id, updateData, files) => {
         is_main: index === 0,
       }));
 
-      await BlogImage.bulkCreate(imageData, { transaction: t });
+      await blogRepository.createImages(imageData, {
+        transaction: t,
+      });
     }
 
-    const updatedBlog = await Blog.findByPk(id, {
-      include: [
-        {
-          model: BlogImage,
-          as: "images",
-        },
-      ],
+    const updatedBlog = await blogRepository.findById(id, {
       transaction: t,
     });
 
@@ -177,14 +156,9 @@ const updateBlogService = async (id, updateData, files) => {
 
 const deleteBlogService = async (id) => {
   const t = await sequelize.transaction();
+
   try {
-    const blog = await Blog.findByPk(id, {
-      include: [
-        {
-          model: BlogImage,
-          as: "images",
-        },
-      ],
+    const blog = await blogRepository.findById(id, {
       transaction: t,
     });
 
@@ -195,22 +169,24 @@ const deleteBlogService = async (id) => {
     for (const image of blog.images) {
       if (image.public_id) {
         const result = await cloudinary.uploader.destroy(image.public_id);
+
         console.log("CLOUDINARY DELETE RESULT:", result);
       }
     }
 
-    await BlogImage.destroy({
-      where: { blog_id: id },
+    await blogRepository.deleteImagesByBlogId(id, {
       transaction: t,
     });
 
-    await Blog.destroy({
-      where: { id },
+    await blogRepository.deleteById(id, {
       transaction: t,
     });
 
     await t.commit();
-    return { message: "Xóa bài viết thành công" };
+
+    return {
+      message: "Xóa bài viết thành công",
+    };
   } catch (error) {
     await t.rollback();
     throw error;

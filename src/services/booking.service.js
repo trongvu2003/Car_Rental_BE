@@ -1,16 +1,26 @@
-const { Booking, User, Car, CarImage, Payment } = require("../models");
+const { Booking } = require("../models");
 const { Op } = require("sequelize");
+
+const bookingRepository = require("../repositories/booking.repository");
 
 const createBookingService = async (bookingData) => {
   const t = await Booking.sequelize.transaction();
+
   try {
     const { user_id, car_id, start_date, end_date } = bookingData;
 
-    const user = await User.findByPk(user_id, { transaction: t });
+    const user = await bookingRepository.findUserById(user_id, {
+      transaction: t,
+    });
+
     if (!user) {
       throw new Error("User not found");
     }
-    const car = await Car.findByPk(car_id, { transaction: t });
+
+    const car = await bookingRepository.findCarById(car_id, {
+      transaction: t,
+    });
+
     if (!car) {
       throw new Error("Car not found");
     }
@@ -18,36 +28,16 @@ const createBookingService = async (bookingData) => {
     if (new Date(start_date) >= new Date(end_date)) {
       throw new Error("Start date must be before end date");
     }
+
     // kiểm tra xe đã được đặt chưa
-    const existingBooking = await Booking.findOne({
-      where: {
-        car_id,
-        status: {
-          [Op.not]: "cancelled",
-        },
-        [Op.or]: [
-          {
-            start_date: {
-              [Op.between]: [start_date, end_date],
-            },
-          },
-          {
-            end_date: {
-              [Op.between]: [start_date, end_date],
-            },
-          },
-          {
-            start_date: {
-              [Op.lte]: start_date,
-            },
-            end_date: {
-              [Op.gte]: end_date,
-            },
-          },
-        ],
-      },
-      transaction: t,
-    });
+    const existingBooking = await bookingRepository.findExistingBooking(
+      car_id,
+      start_date,
+      end_date,
+      {
+        transaction: t,
+      }
+    );
 
     if (existingBooking) {
       throw new Error("Car already booked");
@@ -55,12 +45,13 @@ const createBookingService = async (bookingData) => {
 
     const startDate = new Date(start_date);
     const endDate = new Date(end_date);
+
     const totalDays =
       Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
 
     const total_price = totalDays * car.price_per_day;
 
-    const booking = await Booking.create(
+    const booking = await bookingRepository.create(
       {
         user_id,
         car_id,
@@ -72,20 +63,8 @@ const createBookingService = async (bookingData) => {
         transaction: t,
       }
     );
-    const result = await Booking.findByPk(booking.id, {
-      include: [
-        {
-          model: Car,
-          as: "car",
-        },
-        {
-          model: User,
-          as: "user",
-          attributes: {
-            exclude: ["password"],
-          },
-        },
-      ],
+
+    const result = await bookingRepository.findByIdWithDetails(booking.id, {
       transaction: t,
     });
 
@@ -101,22 +80,7 @@ const createBookingService = async (bookingData) => {
 // GET ALL BOOKINGS
 const getAllBookingsService = async () => {
   try {
-    return await Booking.findAll({
-      include: [
-        {
-          model: Car,
-          as: "car",
-        },
-        {
-          model: User,
-          as: "user",
-          attributes: {
-            exclude: ["password"], // loại bỏ trường password khi trả về thông tin user
-          },
-        },
-      ],
-      order: [["createdAt", "DESC"]],
-    });
+    return await bookingRepository.findAll();
   } catch (error) {
     throw error;
   }
@@ -124,27 +88,8 @@ const getAllBookingsService = async () => {
 
 const getBookingByIdService = async (bookingId) => {
   try {
-    const booking = await Booking.findByPk(bookingId, {
-      include: [
-        {
-          model: Car,
-          as: "car",
-          include: [
-            {
-              model: CarImage,
-              as: "images",
-            },
-          ],
-        },
-        {
-          model: User,
-          as: "user",
-          attributes: {
-            exclude: ["password"],
-          },
-        },
-      ],
-    });
+    const booking = await bookingRepository.findByIdWithDetails(bookingId);
+
     return booking;
   } catch (error) {
     throw error;
@@ -155,7 +100,7 @@ const updateBookingStatusService = async (bookingId, status) => {
   const t = await Booking.sequelize.transaction();
 
   try {
-    const booking = await Booking.findByPk(bookingId, {
+    const booking = await bookingRepository.findById(bookingId, {
       transaction: t,
     });
 
@@ -169,7 +114,8 @@ const updateBookingStatusService = async (bookingId, status) => {
     //   throw new Error("Invalid booking status");
     // }
 
-    await booking.update(
+    await bookingRepository.update(
+      booking,
       {
         status,
       },
@@ -192,56 +138,40 @@ const updateBookingStatusService = async (bookingId, status) => {
 
 const deleteBookingService = async (bookingId) => {
   const t = await Booking.sequelize.transaction();
+
   try {
-    const booking = await Booking.findByPk(bookingId, {
+    const booking = await bookingRepository.findById(bookingId, {
       transaction: t,
     });
+
     if (!booking) {
       throw new Error("Booking not found");
     }
-    await Payment.destroy({
-      where: { booking_id: bookingId },
+
+    await bookingRepository.deletePaymentByBookingId(bookingId, {
       transaction: t,
     });
-    await booking.destroy({
+
+    await bookingRepository.deleteById(booking, {
       transaction: t,
     });
+
     await t.commit();
-    return { message: "Booking deleted successfully" };
+
+    return {
+      message: "Booking deleted successfully",
+    };
   } catch (error) {
     if (t) {
       await t.rollback();
     }
+
     throw error;
   }
 };
 
 const getMyBookingsService = async (userId) => {
-  const bookings = await Booking.findAll({
-    where: {
-      user_id: userId,
-    },
-    include: [
-      {
-        model: Car,
-        as: "car",
-        include: [
-          {
-            model: CarImage,
-            as: "images",
-            separate: true,
-            limit: 1,
-            order: [["id", "ASC"]],
-          },
-        ],
-      },
-      {
-        model: Payment,
-        as: "payment",
-      },
-    ],
-    order: [["createdAt", "DESC"]],
-  });
+  const bookings = await bookingRepository.findMyBookings(userId);
 
   return bookings;
 };
