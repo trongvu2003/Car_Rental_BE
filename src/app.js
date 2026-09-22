@@ -11,6 +11,7 @@ const newsRoute = require("./routes/news.route");
 const app = express();
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
+const { apiLimiter } = require("./middleware/rateLimit");
 
 // - credentials: true để trình duyệt được phép gửi/nhận cookie cross-origin
 // - origin PHẢI là domain cụ thể (không được để mặc định "*") khi dùng credentials
@@ -22,6 +23,7 @@ app.use(
 );
 app.use(cookieParser());
 app.use(express.json());
+app.use("/api", apiLimiter);
 
 app.get("/", (req, res) => {
   res.send("Car Rental API is running...");
