@@ -3,7 +3,14 @@ const cloudinary = require("../config/cloudinary");
 const { Op } = require("sequelize");
 
 const blogRepository = require("../repositories/blog.repository");
+const { redisClient } = require("../config/redis");
+const clearBlogListCache = async () => {
+  const keys = await redisClient.keys("blogs:page=*");
 
+  if (keys.length > 0) {
+    await redisClient.del(keys);
+  }
+};
 const createBlogService = async (blogData) => {
   const { title, excerpt, content, isPublished, publishedAt, images } =
     blogData;
@@ -40,6 +47,7 @@ const createBlogService = async (blogData) => {
     });
 
     await t.commit();
+    await clearBlogListCache();
     return result;
   } catch (error) {
     await t.rollback();
@@ -67,19 +75,37 @@ const getAllBlogsService = async (query) => {
     const pageSize = Number(limit) || 10;
     const offset = (pageNumber - 1) * pageSize;
 
+    const cacheKey = `blogs:page=${pageNumber}:limit=${pageSize}:isPublished=${
+      isPublished ?? "all"
+    }:search=${search || "all"}`;
+
+    const cachedData = await redisClient.get(cacheKey);
+
+    if (cachedData) {
+      console.log("Get blogs from Redis");
+      return JSON.parse(cachedData);
+    }
+
+    console.log("Get blogs from Database");
     const { rows, count } = await blogRepository.findAndCountAll({
       where,
       limit: pageSize,
       offset,
     });
 
-    return {
+    const result = {
       data: rows,
       total: count,
       page: pageNumber,
       limit: pageSize,
       totalPages: Math.ceil(count / pageSize),
     };
+
+    await redisClient.set(cacheKey, JSON.stringify(result), {
+      EX: 300,
+    });
+
+    return result;
   } catch (error) {
     throw error;
   }
@@ -147,6 +173,7 @@ const updateBlogService = async (id, updateData, files) => {
     });
 
     await t.commit();
+    await clearBlogListCache();
     return updatedBlog;
   } catch (error) {
     await t.rollback();
@@ -183,7 +210,7 @@ const deleteBlogService = async (id) => {
     });
 
     await t.commit();
-
+    await clearBlogListCache();
     return {
       message: "Xóa bài viết thành công",
     };

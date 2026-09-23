@@ -2,7 +2,15 @@ const { sequelize } = require("../models");
 const cloudinary = require("../config/cloudinary");
 
 const carRepository = require("../repositories/car.repository");
+const { redisClient } = require("../config/redis");
+//Xóa catche
+const clearCarListCache = async () => {
+  const keys = await redisClient.keys("cars:page=*");
 
+  if (keys.length > 0) {
+    await redisClient.del(keys);
+  }
+};
 const createCarService = async (carData) => {
   const {
     name,
@@ -54,6 +62,7 @@ const createCarService = async (carData) => {
     });
 
     await t.commit();
+    await clearCarListCache();
     return result;
   } catch (error) {
     await t.rollback();
@@ -74,21 +83,39 @@ const getAllCarsService = async (query) => {
     // pagination
     const pageNumber = Number(page) || 1;
     const pageSize = Number(limit) || 10;
-    const offset = (pageNumber - 1) * pageSize;
 
+    const offset = (pageNumber - 1) * pageSize;
+    // Tạo key riêng cho từng query
+    const cacheKey = `cars:page=${pageNumber}:limit=${pageSize}:status=${
+      status || "all"
+    }`;
+    // 1. Kiểm tra Redis
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log("Get cars from Redis");
+      return JSON.parse(cachedData);
+    }
+    console.log(" Get cars from Database");
+    // 2. Không có cache → query Database
     const { rows, count } = await carRepository.findAndCountAll({
       where,
       limit: pageSize,
       offset,
     });
 
-    return {
+    const result = {
       data: rows,
       total: count,
       page: pageNumber,
       limit: pageSize,
       totalPages: Math.ceil(count / pageSize),
     };
+
+    // 3. Lưu vào Redis trong 5 phút
+    await redisClient.set(cacheKey, JSON.stringify(result), {
+      EX: 300,
+    });
+    return result;
   } catch (error) {
     throw error;
   }
@@ -164,7 +191,7 @@ const updateCarService = async (id, updateData, files) => {
     });
 
     await t.commit();
-
+    await clearCarListCache();
     return updatedCar;
   } catch (error) {
     await t.rollback();
@@ -204,7 +231,7 @@ const deleteCarService = async (id) => {
     });
 
     await t.commit();
-
+    await clearCarListCache();
     return {
       message: "Car deleted successfully",
     };
